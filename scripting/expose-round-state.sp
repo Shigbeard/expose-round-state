@@ -130,17 +130,10 @@ void HandleIncoming(Socket socket, Socket newSocket, const char[] hostname, int 
     char response[2048]; // 2048 buffer is more than enough. Realistically 512 is probably better.
     json_encode(data, response, sizeof(response)); // Convert json object to string
 
-    int ourlen = strlen(response) + 1; // Here we trim all wasted space in the buffer
-    char[] trimmedjson = new char[ourlen]; // .. by creating a new dynamically sized buffer
-    strcopy(trimmedjson, ourlen, response); // .. and copying in that data
+    char payload[3086]; // Pracitcally the same deal here, except we're formatting a string along the way.
+    Format(payload, sizeof(payload), HTTP_RESPONSE_HEADERS, strlen(response), response);
 
-    char finalResp[3086]; // Pracitcally the same deal here, except we're formatting a string along the way.
-    Format(finalResp, sizeof(finalResp), HTTP_RESPONSE_HEADERS, ourlen, trimmedjson)
-    int newlen = strlen(finalResp) + 1;
-    char[] trimmedResp = new char[newlen];
-    strcopy(trimmedResp, newlen, finalResp);
-
-    newSocket.Send(trimmedResp, newlen); // Send the response, we need to give them the correct length too.
+    newSocket.Send(payload, strlen(payload)); // Send the payload, we need to give them the correct length too.
     newSocket.SetDisconnectCallback(Disconnect); // Be sure to kill the socket
     newSocket.Disconnect(); // newSocket would have been reused in a keep-alive, persistent connection.
 
