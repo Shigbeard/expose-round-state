@@ -11,7 +11,7 @@
 #include <tf2_morestocks>
 
 #define PLUGIN_VERSION		  "0.3"
-#define HTTP_RESPONSE_HEADERS "HTTP/1.0 200 OK\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
+#define HTTP_RESPONSE_HEADERS "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
 #define HTTP_FUCK_OFF_CORS "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999" // Fuck you CORS i HATE YOU I HATE you i HATE YOU I HATE YOU I HATE YOU
 // YOU ARE THE SINGLE WORST FUCKING EXCUSE OF AN XSS SHIELD THERE EVER FUCKING EXISTED
 // ALL I NEED TO DO IS INJECT HEADERS INTO MY BROWSER TO SAY "YUP THIS REQUEST IS GOOD" and YOU HAVE NO FUCKING CLUE
