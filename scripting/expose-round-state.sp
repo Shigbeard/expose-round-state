@@ -12,16 +12,19 @@
 
 #define PLUGIN_VERSION		  "0.3"
 #define HTTP_RESPONSE_HEADERS "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
-#define HTTP_FUCK_OFF_CORS "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999" // Fuck you CORS i HATE YOU I HATE you i HATE YOU I HATE YOU I HATE YOU
+#define HTTP_FUCK_OFF_CORS	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"	 // Fuck you CORS i HATE YOU I HATE you i HATE YOU I HATE YOU I HATE YOU
 // YOU ARE THE SINGLE WORST FUCKING EXCUSE OF AN XSS SHIELD THERE EVER FUCKING EXISTED
 // ALL I NEED TO DO IS INJECT HEADERS INTO MY BROWSER TO SAY "YUP THIS REQUEST IS GOOD" and YOU HAVE NO FUCKING CLUE
 // THAT I DID THAT.
 // FUCKING DUMB FUCK OFF
 
-ConVar g_cSocketIP	 = null;
-ConVar g_cSocketPort = null;
+ConVar g_cSocketIP	  = null;
+ConVar g_cSocketPort  = null;
 
-Socket hSocket		 = null;
+ConVar g_cRedTeamName = null;
+ConVar g_cBluTeamName = null;
+
+Socket hSocket		  = null;
 
 enum struct ControlPoint
 {
@@ -43,6 +46,12 @@ enum struct ERSRoundState
     int			  bluTime;
 }
 
+enum struct TeamNames
+{
+    char red[32];
+    char blu[32];
+}
+
 public Plugin myinfo =
 {
     name		= "Expose Round State",
@@ -58,10 +67,14 @@ public void
     OnPluginStart()
 {
     CreateConVar("ers_version", PLUGIN_VERSION, "Plugin version", FCVAR_PROTECTED);
-    g_cSocketIP	  = CreateConVar("ers_ip", "0.0.0.0", "IP to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
-    g_cSocketPort = CreateConVar("ers_port", "27019", "Port to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
+    g_cSocketIP	   = CreateConVar("ers_ip", "0.0.0.0", "IP to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
+    g_cSocketPort  = CreateConVar("ers_port", "27019", "Port to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
+    g_cBluTeamName = CreateConVar("ers_team_blu", "BLU", "Name of the BLU team", FCVAR_PROTECTED);
+    g_cRedTeamName = CreateConVar("ers_team_red", "RED", "Name of the RED team", FCVAR_PROTECTED);
     AutoExecConfig(true, "expose_round_state");
     RegServerCmd("ers_testcaps", Command_TestCaps, "Test capabilities of the plugin", 0);
+    g_cSocketIP.AddChangeHook(TheConVarChanged);
+    g_cSocketPort.AddChangeHook(TheConVarChanged);
 }
 
 // Create socket (SocketCreate)
@@ -138,6 +151,15 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
         jsonRoundState.SetInt("bluTime", view_as<int>(roundState.bluTime));
         data.SetObject("roundState", jsonRoundState);
 
+        TeamNames teamnames;
+        GetConVarString(g_cBluTeamName, teamnames.blu, sizeof(teamnames.blu));
+        GetConVarString(g_cRedTeamName, teamnames.red, sizeof(teamnames.red));
+        JSON_Object jsonTeams = new JSON_Object();
+        jsonTeams.SetString("red", teamnames.red);
+        jsonTeams.SetString("blu", teamnames.blu);
+
+        data.SetObject("teams", jsonTeams);
+
         // begin HTML response
         char response[2048];							  // 2048 buffer is more than enough. Realistically 512 is probably better.
         json_encode(data, response, sizeof(response));	  // Convert json object to string
@@ -148,6 +170,22 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
         socket.Send(payload, strlen(payload));	  // Send the payload, we need to give them the correct length too.
         socket.Disconnect();
         CloseHandle(socket);
+        // at this point its safe to delete our handles
+        delete jsonRoundState;
+        delete jsonPoints;
+        delete jsonTeams;
+        // find all the points in data and delete them
+        for (int i = 0; i < points.Length; i++)
+        {
+            ControlPoint p;
+            points.GetArray(i, p);
+            char iAsChar[2];	// null terminator
+            IntToString(i, iAsChar, sizeof(iAsChar));
+            delete data.GetObject(iAsChar);
+        }
+        delete data;
+        delete points;
+        // delete socket;
     }
 }
 
@@ -198,11 +236,6 @@ void ErrorHandler(Socket socket, const int errorType, const int errorNum, any ar
 void CreateListenServer()
 {
     // check if the handle already has a valid socket
-    if (hSocket != null)
-    {
-        // PrintToServer("Socket already exists");
-        return;
-    }
     int	 port = GetConVarInt(g_cSocketPort);
     char ip[16];
     GetConVarString(g_cSocketIP, ip, sizeof(ip));
@@ -213,12 +246,22 @@ void CreateListenServer()
 
 public void OnMapStart()
 {
+    char ip[16];
+    char port[6];
+    GetConVarString(g_cSocketIP, ip, sizeof(ip));
+    GetConVarString(g_cSocketPort, port, sizeof(port));
+    PrintToServer("Broadcasting round state on %s:%s", ip, port);
     CreateListenServer();
 }
 
 public void OnPluginEnd()
 {
     // SocketDisconnect(hSocket);
+    char ip[16];
+    char port[6];
+    GetConVarString(g_cSocketIP, ip, sizeof(ip));
+    GetConVarString(g_cSocketPort, port, sizeof(port));
+    PrintToServer("Closing socket");
     CloseHandle(hSocket);
     // hSocket = null;
 }
@@ -228,4 +271,13 @@ int SortPointsByIndex(int i1, int i2, Handle array, Handle hndl)
     int v1 = view_as<ArrayList>(array).Get(i1, ControlPoint::index);
     int v2 = view_as<ArrayList>(array).Get(i2, ControlPoint::index);
     return v1 - v2;
+}
+
+void TheConVarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    if (convar == g_cSocketIP || convar == g_cSocketPort)
+    {
+        OnPluginEnd();
+        OnMapStart();
+    }
 }
