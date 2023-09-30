@@ -30,6 +30,7 @@ enum struct ControlPoint
 {
     int index;
     int team;
+    int locked;
 }
 
 enum struct ERSRoundState
@@ -91,7 +92,7 @@ Action Command_TestCaps(int args)
 void Disconnect(Socket socket, any arg)
 {
     // PrintToServer("Disconnected socket");
-    CloseHandle(socket);
+    delete socket;
 }
 
 void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, any arg)
@@ -108,7 +109,7 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
         Format(payload, sizeof(payload), HTTP_FUCK_OFF_CORS);
         socket.Send(payload, sizeof(payload));
         socket.Disconnect();
-        CloseHandle(socket);
+        delete socket;
     }
     else {
         ArrayList points;	 // Get all Control Points
@@ -129,6 +130,7 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
             JSON_Object jsonPoint = new JSON_Object();
             jsonPoint.SetInt("team", p.team);
             jsonPoint.SetInt("index", p.index);
+            jsonPoint.SetInt("locked", p.locked);
             char iAsChar[2];	// null terminator
             IntToString(i, iAsChar, sizeof(iAsChar));
             jsonPoints.SetObject(iAsChar, jsonPoint);
@@ -169,7 +171,7 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
 
         socket.Send(payload, strlen(payload));	  // Send the payload, we need to give them the correct length too.
         socket.Disconnect();
-        CloseHandle(socket);
+        delete socket;
         // at this point its safe to delete our handles
         delete jsonRoundState;
         delete jsonPoints;
@@ -195,11 +197,13 @@ void HandleIncoming(Socket socket, Socket newSocket, const char[] hostname, int 
     newSocket.SetReceiveCallback(ReceiveData);		// Mandatory, but unused
     newSocket.SetDisconnectCallback(Disconnect);	// Be sure to kill the socket
 
-    // CloseHandle(newSocket); // All Sockets are Handles, and must be Closed. Memory leaks onto the carpet otherwise.
+    // delete newSocket; // All Sockets are Handles, and must be Closed. Memory leaks onto the carpet otherwise.
 }
 
 ERSRoundState RetrieveRoundState()
 {
+    int MatchTimer;
+    GetMapTimeLeft(MatchTimer);
     ERSRoundState rs;
     rs.state		   = GameRules_GetRoundState();
 
@@ -208,7 +212,7 @@ ERSRoundState RetrieveRoundState()
     rs.roundTimerState = TF2_GetRoundTimeLeft(rs.roundTime);
     // rs.matchTimerState = TF2_GetMatchTimeLeft(matchTime);
     rs.matchTimerState = TF2TimerState_NotApplicable;
-    rs.matchTime	   = 0;
+    rs.matchTime	   = MatchTimer;
 
     rs.isKoth		   = TF2_GetKothClocks(rs.redTime, rs.bluTime);
     return rs;
@@ -223,6 +227,7 @@ ArrayList GetControlPoints()
         ControlPoint p;
         p.index = GetEntProp(ent, Prop_Data, "m_iPointIndex");
         p.team	= GetEntProp(ent, Prop_Data, "m_iTeamNum");
+        p.locked = GetEntProp(ent, Prop_Data, "m_bLocked");
         points.PushArray(p);
     }
     return points;
@@ -262,7 +267,7 @@ public void OnPluginEnd()
     GetConVarString(g_cSocketIP, ip, sizeof(ip));
     GetConVarString(g_cSocketPort, port, sizeof(port));
     PrintToServer("Closing socket");
-    CloseHandle(hSocket);
+    delete hSocket;
     // hSocket = null;
 }
 

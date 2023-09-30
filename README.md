@@ -7,7 +7,7 @@ This is a sourcemod plugin that will expose certain data about a round and its s
 - [Sourcemod 1.11](https://www.sourcemod.net/downloads.php?branch=stable) or higher (tested on build 6923)
 - [sm-json](https://github.com/clugg/sm-json) library version 5.0.0 or higher
 - The JoinedSenses fork of [sm-ext-socket](https://github.com/JoinedSenses/sm-ext-socket/) tested against the release on Nov 18, 2019.
-- [This](https://github.com/powerlord/sourcemod-snippets/blob/5bbc8e384d4b0dde8fe76868af7ce7e6909e9855/scripting/include/tf2_morestocks.inc#L277-L408) snippet of code from powerlord's snippets repo. (tf2_morestocks.inc)
+- ~~[This](https://github.com/powerlord/sourcemod-snippets/blob/5bbc8e384d4b0dde8fe76868af7ce7e6909e9855/scripting/include/tf2_morestocks.inc#L277-L408) snippet of code from powerlord's snippets repo. (tf2_morestocks.inc)~~ I had to patch a bug in this code, where if it couldn't find the KOTH entities, it would raise an exception. Use my version instead.
 - A server host that doesn't mind you creating a socket to listen on a port other than your server's assigned port.
 
 The sourcemod version, socket extension, and the server thing are mandatory for runtime. Everything but the server thing is mandatory for compilation.
