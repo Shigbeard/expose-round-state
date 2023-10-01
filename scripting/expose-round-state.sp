@@ -11,12 +11,8 @@
 #include <tf2_morestocks>
 
 #define PLUGIN_VERSION		  "0.3"
-#define HTTP_RESPONSE_HEADERS "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
-#define HTTP_FUCK_OFF_CORS	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"	 // Fuck you CORS i HATE YOU I HATE you i HATE YOU I HATE YOU I HATE YOU
-// YOU ARE THE SINGLE WORST FUCKING EXCUSE OF AN XSS SHIELD THERE EVER FUCKING EXISTED
-// ALL I NEED TO DO IS INJECT HEADERS INTO MY BROWSER TO SAY "YUP THIS REQUEST IS GOOD" and YOU HAVE NO FUCKING CLUE
-// THAT I DID THAT.
-// FUCKING DUMB FUCK OFF
+#define HTTP_DATA_RESPONSE "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
+#define HTTP_CORS_RESPONSE	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"
 
 ConVar g_cSocketIP	  = null;
 ConVar g_cSocketPort  = null;
@@ -53,6 +49,9 @@ enum struct TeamNames
     char blu[32];
 }
 
+/////////////
+// NATIVES //
+/////////////
 public Plugin myinfo =
 {
     name		= "Expose Round State",
@@ -60,23 +59,42 @@ public Plugin myinfo =
     description = "Makes server info available via a websocket connection on a specific port (must be set in a CFG file on load)",
     version		= PLUGIN_VERSION,
     url			= ""
-
-
 }
 
-public void
-    OnPluginStart()
+public void OnPluginStart()
 {
-    CreateConVar("ers_version", PLUGIN_VERSION, "Plugin version", FCVAR_PROTECTED);
     g_cSocketIP	   = CreateConVar("ers_ip", "0.0.0.0", "IP to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
     g_cSocketPort  = CreateConVar("ers_port", "27019", "Port to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
     g_cBluTeamName = CreateConVar("ers_team_blu", "BLU", "Name of the BLU team", FCVAR_PROTECTED);
     g_cRedTeamName = CreateConVar("ers_team_red", "RED", "Name of the RED team", FCVAR_PROTECTED);
     AutoExecConfig(true, "expose_round_state");
-    RegServerCmd("ers_testcaps", Command_TestCaps, "Test capabilities of the plugin", 0);
-    g_cSocketIP.AddChangeHook(TheConVarChanged);
-    g_cSocketPort.AddChangeHook(TheConVarChanged);
+    CreateConVar("ers_version", PLUGIN_VERSION, "Plugin version", FCVAR_PROTECTED);
+    g_cSocketIP.AddChangeHook(ERS_OnConVarChanged);
+    g_cSocketPort.AddChangeHook(ERS_OnConVarChanged);
+    RegServerCmd("ers_restart", ERS_RestartSocket, "Restarts the socket", 0);
 }
+
+public void OnMapStart()
+{
+    char ip[16];
+    char port[6];
+    GetConVarString(g_cSocketIP, ip, sizeof(ip));
+    GetConVarString(g_cSocketPort, port, sizeof(port));
+    PrintToServer("Broadcasting round state on %s:%s", ip, port);
+    ERS_CreateListenSocket();
+}
+
+public void OnPluginEnd()
+{
+    char ip[16];
+    char port[6];
+    GetConVarString(g_cSocketIP, ip, sizeof(ip));
+    GetConVarString(g_cSocketPort, port, sizeof(port));
+    PrintToServer("Closing socket");
+    delete hSocket;
+    // hSocket = null;
+}
+
 
 // Create socket (SocketCreate)
 // Bind to port (SocketBind)
@@ -84,41 +102,32 @@ public void
 // Handle incoming connections (SocketConnect) <-- callback function SocketConnectCB
 // Respond with game state info (TODO)
 
-Action Command_TestCaps(int args)
+///////////////////////
+// CORE PLUGIN LOGIC //
+///////////////////////
+void ERS_MainLogic(Socket socket, const char[] receiveData)
 {
-    return Plugin_Handled;
-}
-
-void Disconnect(Socket socket, any arg)
-{
-    // PrintToServer("Disconnected socket");
-    delete socket;
-}
-
-void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, any arg)
-{
-    // PrintToServer("Received data: %s", receiveData);
-
+    // Determine the type of request. If it's an OPTIONS request, respond with the CORS headers only.
     int options = StrContains(receiveData, "OPTIONS", true);
-    // int get		= StrContains(receiveData, "GET", true);
-
-    if (options != -1)
+    if (options != -1)	  // This is a CORS options request. Respond with the CORS headers only
     {
-        char payload[3086];	   // Pracitcally the same deal here, except we're formatting a string along the way.
+        char payload[3086];
         payload = "%s";
-        Format(payload, sizeof(payload), HTTP_FUCK_OFF_CORS);
+        Format(payload, sizeof(payload), HTTP_CORS_RESPONSE);
         socket.Send(payload, sizeof(payload));
         socket.Disconnect();
+        // Clean up handles
         delete socket;
     }
-    else {
+    else { // We have an actual request for data
+        // Collect info from helper functions
         ArrayList points;	 // Get all Control Points
-        points = GetControlPoints();
-        points.SortCustom(SortPointsByIndex);
+        points = ERS_GetControlPoints();
+        points.SortCustom(ERS_SortPointsByIndex);
 
         ERSRoundState roundState;	 // Get the Round State
-        roundState			   = RetrieveRoundState();
-
+        roundState			   = ERS_RetrieveRoundState();
+        // Begin collating this data as JSON_Objects
         JSON_Object data	   = new JSON_Object();	   // Begin coersion into a JSON object
         JSON_Object jsonPoints = new JSON_Object();
 
@@ -135,7 +144,7 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
             IntToString(i, iAsChar, sizeof(iAsChar));
             jsonPoints.SetObject(iAsChar, jsonPoint);
 
-            // Cannot delete jsonPoint because we store a reference to it.
+            // Cannot delete jsonPoint yet because we store a reference to it. We'll clean up later
         }
         data.SetObject("points", jsonPoints);
 
@@ -153,13 +162,13 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
         jsonRoundState.SetInt("bluTime", view_as<int>(roundState.bluTime));
         data.SetObject("roundState", jsonRoundState);
 
+        // add team names
         TeamNames teamnames;
         GetConVarString(g_cBluTeamName, teamnames.blu, sizeof(teamnames.blu));
         GetConVarString(g_cRedTeamName, teamnames.red, sizeof(teamnames.red));
         JSON_Object jsonTeams = new JSON_Object();
         jsonTeams.SetString("red", teamnames.red);
         jsonTeams.SetString("blu", teamnames.blu);
-
         data.SetObject("teams", jsonTeams);
 
         // begin HTML response
@@ -167,12 +176,14 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
         json_encode(data, response, sizeof(response));	  // Convert json object to string
 
         char payload[3086];	   // Pracitcally the same deal here, except we're formatting a string along the way.
-        Format(payload, sizeof(payload), HTTP_RESPONSE_HEADERS, strlen(response), response);
+        Format(payload, sizeof(payload), HTTP_DATA_RESPONSE, strlen(response), response);
 
+        // Send payload, close connection
         socket.Send(payload, strlen(payload));	  // Send the payload, we need to give them the correct length too.
         socket.Disconnect();
+
+        // Clean up handles
         delete socket;
-        // at this point its safe to delete our handles
         delete jsonRoundState;
         delete jsonPoints;
         delete jsonTeams;
@@ -181,26 +192,64 @@ void ReceiveData(Socket socket, const char[] receiveData, const int dataSize, an
         {
             ControlPoint p;
             points.GetArray(i, p);
-            char iAsChar[2];	// null terminator
+            char iAsChar[2];
             IntToString(i, iAsChar, sizeof(iAsChar));
             delete data.GetObject(iAsChar);
         }
         delete data;
         delete points;
-        // delete socket;
     }
 }
 
-void HandleIncoming(Socket socket, Socket newSocket, const char[] hostname, int remotePort, any arg)
+//////////////////
+// SOCKET STUFF //
+//////////////////
+// Create a socket to listen for incoming connections
+void ERS_CreateListenSocket()
 {
-    // An incoming connection, on newSocket, has come in.
-    newSocket.SetReceiveCallback(ReceiveData);		// Mandatory, but unused
-    newSocket.SetDisconnectCallback(Disconnect);	// Be sure to kill the socket
-
-    // delete newSocket; // All Sockets are Handles, and must be Closed. Memory leaks onto the carpet otherwise.
+    // check if the handle already has a valid socket
+    int	 port = GetConVarInt(g_cSocketPort);
+    char ip[16];
+    GetConVarString(g_cSocketIP, ip, sizeof(ip));
+    hSocket = SocketCreate(SOCKET_TCP, ERS_ErrorHandler);
+    SocketBind(hSocket, ip, port);
+    SocketListen(hSocket, ERS_SocketHandleIncoming);
 }
 
-ERSRoundState RetrieveRoundState()
+// Create a Handler for Incoming Connections
+void ERS_SocketHandleIncoming(Socket socket, Socket newSocket, const char[] hostname, int remotePort, any arg)
+{
+    newSocket.SetReceiveCallback(ERS_SocketReceiveData);	  // Mandatory, but unused
+    newSocket.SetDisconnectCallback(ERS_SocketDisconnect);	  // Be sure to kill the socket
+}
+
+// Create a Handler for disconnecting connections.
+void ERS_SocketDisconnect(Socket socket, any arg)
+{
+    // PrintToServer("Disconnected socket");
+    delete socket;
+}
+
+// Create a Handler for errors.
+void ERS_ErrorHandler(Socket socket, const int errorType, const int errorNum, any arg)
+{
+    // TODO: Handle errors
+    PrintToServer("Socket error: %d %d", errorType, errorNum);
+    OnPluginEnd();
+    OnMapStart();
+}
+
+// Create a handler for Receiving data on an incoming connection.
+void ERS_SocketReceiveData(Socket socket, const char[] receiveData, const int dataSize, any arg)
+{
+    ERS_MainLogic(socket, receiveData);
+}
+
+//////////////////
+// HELPER FUNCS //
+//////////////////
+// Gets the round state
+ERSRoundState ERS_RetrieveRoundState()
 {
     int MatchTimer;
     GetMapTimeLeft(MatchTimer);
@@ -217,72 +266,42 @@ ERSRoundState RetrieveRoundState()
     rs.isKoth		   = TF2_GetKothClocks(rs.redTime, rs.bluTime);
     return rs;
 }
-
-ArrayList GetControlPoints()
+// Gets all control points
+ArrayList ERS_GetControlPoints()
 {
     ArrayList points = new ArrayList(sizeof(ControlPoint));
     int		  ent	 = -1;
     while ((ent = FindEntityByClassname(ent, "team_control_point")) > 0)
     {
         ControlPoint p;
-        p.index = GetEntProp(ent, Prop_Data, "m_iPointIndex");
-        p.team	= GetEntProp(ent, Prop_Data, "m_iTeamNum");
+        p.index	 = GetEntProp(ent, Prop_Data, "m_iPointIndex");
+        p.team	 = GetEntProp(ent, Prop_Data, "m_iTeamNum");
         p.locked = GetEntProp(ent, Prop_Data, "m_bLocked");
         points.PushArray(p);
     }
     return points;
 }
-
-void ErrorHandler(Socket socket, const int errorType, const int errorNum, any arg)
-{
-    // PrintToServer("Error: %d, %d", errorType, errorNum);
-}
-
-void CreateListenServer()
-{
-    // check if the handle already has a valid socket
-    int	 port = GetConVarInt(g_cSocketPort);
-    char ip[16];
-    GetConVarString(g_cSocketIP, ip, sizeof(ip));
-    hSocket = SocketCreate(SOCKET_TCP, ErrorHandler);
-    SocketBind(hSocket, ip, port);
-    SocketListen(hSocket, HandleIncoming);
-}
-
-public void OnMapStart()
-{
-    char ip[16];
-    char port[6];
-    GetConVarString(g_cSocketIP, ip, sizeof(ip));
-    GetConVarString(g_cSocketPort, port, sizeof(port));
-    PrintToServer("Broadcasting round state on %s:%s", ip, port);
-    CreateListenServer();
-}
-
-public void OnPluginEnd()
-{
-    // SocketDisconnect(hSocket);
-    char ip[16];
-    char port[6];
-    GetConVarString(g_cSocketIP, ip, sizeof(ip));
-    GetConVarString(g_cSocketPort, port, sizeof(port));
-    PrintToServer("Closing socket");
-    delete hSocket;
-    // hSocket = null;
-}
-
-int SortPointsByIndex(int i1, int i2, Handle array, Handle hndl)
+// Sorts control points by index
+int ERS_SortPointsByIndex(int i1, int i2, Handle array, Handle hndl)
 {
     int v1 = view_as<ArrayList>(array).Get(i1, ControlPoint::index);
     int v2 = view_as<ArrayList>(array).Get(i2, ControlPoint::index);
     return v1 - v2;
 }
-
-void TheConVarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+// Hook for when the ip or port convar changes, so we restart the socket
+void ERS_OnConVarChanged(ConVar convar, const char[] oldValue, const char[] newValue)
 {
     if (convar == g_cSocketIP || convar == g_cSocketPort)
     {
         OnPluginEnd();
         OnMapStart();
     }
+}
+// Restart the socket
+Action ERS_RestartSocket(int args)
+{
+    PrintToServer("Restarting the socket");
+    OnPluginEnd();
+    OnMapStart();
+    return Plugin_Handled;
 }
