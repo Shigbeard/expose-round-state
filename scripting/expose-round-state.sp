@@ -95,13 +95,6 @@ public void OnPluginEnd()
     // hSocket = null;
 }
 
-
-// Create socket (SocketCreate)
-// Bind to port (SocketBind)
-// Make it listen (SocketListen) <-- callback function SocketIncomingCB
-// Handle incoming connections (SocketConnect) <-- callback function SocketConnectCB
-// Respond with game state info (TODO)
-
 ///////////////////////
 // CORE PLUGIN LOGIC //
 ///////////////////////
