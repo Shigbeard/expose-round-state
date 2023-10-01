@@ -10,7 +10,7 @@
 #include <tf2_stocks>
 #include <tf2_morestocks>
 
-#define PLUGIN_VERSION		  "0.3"
+#define PLUGIN_VERSION		  "0.4c"
 #define HTTP_DATA_RESPONSE "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
 #define HTTP_CORS_RESPONSE	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"
 
@@ -27,6 +27,7 @@ enum struct ControlPoint
     int index;
     int team;
     int locked;
+    int useless;
 }
 
 enum struct ERSRoundState
@@ -68,10 +69,11 @@ public void OnPluginStart()
     g_cBluTeamName = CreateConVar("ers_team_blu", "BLU", "Name of the BLU team", FCVAR_PROTECTED);
     g_cRedTeamName = CreateConVar("ers_team_red", "RED", "Name of the RED team", FCVAR_PROTECTED);
     AutoExecConfig(true, "expose_round_state");
-    CreateConVar("ers_version", PLUGIN_VERSION, "Plugin version", FCVAR_PROTECTED);
+    // CreateConVar("ers_version", PLUGIN_VERSION, "Plugin version", FCVAR_PROTECTED);
     g_cSocketIP.AddChangeHook(ERS_OnConVarChanged);
     g_cSocketPort.AddChangeHook(ERS_OnConVarChanged);
     RegServerCmd("ers_restart", ERS_RestartSocket, "Restarts the socket", 0);
+    RegServerCmd("ers_version", ERS_Version, "Prints the version of the plugin", 0);
 }
 
 public void OnMapStart()
@@ -123,6 +125,7 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
         // Begin collating this data as JSON_Objects
         JSON_Object data	   = new JSON_Object();	   // Begin coersion into a JSON object
         JSON_Object jsonPoints = new JSON_Object();
+        // jsonPoints.Set("points", points);
 
         // loop through points and add each one to the json object
         for (int i = 0; i < points.Length; i++)
@@ -133,11 +136,10 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
             jsonPoint.SetInt("team", p.team);
             jsonPoint.SetInt("index", p.index);
             jsonPoint.SetInt("locked", p.locked);
+            jsonPoint.SetInt("useless", 0);
             char iAsChar[2];	// null terminator
             IntToString(i, iAsChar, sizeof(iAsChar));
             jsonPoints.SetObject(iAsChar, jsonPoint);
-
-            // Cannot delete jsonPoint yet because we store a reference to it. We'll clean up later
         }
         data.SetObject("points", jsonPoints);
 
@@ -178,17 +180,17 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
         // Clean up handles
         delete socket;
         delete jsonRoundState;
-        delete jsonPoints;
         delete jsonTeams;
         // find all the points in data and delete them
         for (int i = 0; i < points.Length; i++)
         {
-            ControlPoint p;
-            points.GetArray(i, p);
+            // ControlPoint p;
+            // points.GetArray(i, p);
             char iAsChar[2];
             IntToString(i, iAsChar, sizeof(iAsChar));
-            delete data.GetObject(iAsChar);
+            delete jsonPoints.GetObject(iAsChar);
         }
+        delete jsonPoints;
         delete data;
         delete points;
     }
@@ -296,5 +298,11 @@ Action ERS_RestartSocket(int args)
     PrintToServer("Restarting the socket");
     OnPluginEnd();
     OnMapStart();
+    return Plugin_Handled;
+}
+
+Action ERS_Version(int args)
+{
+    PrintToServer("Expose Round State version %s", PLUGIN_VERSION);
     return Plugin_Handled;
 }
