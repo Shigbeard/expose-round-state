@@ -10,7 +10,7 @@
 #include <tf2_stocks>
 #include <tf2_morestocks>
 
-#define PLUGIN_VERSION		  "0.4c"
+#define PLUGIN_VERSION		  "0.5"
 #define HTTP_DATA_RESPONSE "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
 #define HTTP_CORS_RESPONSE	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"
 
@@ -27,7 +27,6 @@ enum struct ControlPoint
     int index;
     int team;
     int locked;
-    int useless;
 }
 
 enum struct ERSRoundState
@@ -69,7 +68,6 @@ public void OnPluginStart()
     g_cBluTeamName = CreateConVar("ers_team_blu", "BLU", "Name of the BLU team", FCVAR_PROTECTED);
     g_cRedTeamName = CreateConVar("ers_team_red", "RED", "Name of the RED team", FCVAR_PROTECTED);
     AutoExecConfig(true, "expose_round_state");
-    // CreateConVar("ers_version", PLUGIN_VERSION, "Plugin version", FCVAR_PROTECTED);
     g_cSocketIP.AddChangeHook(ERS_OnConVarChanged);
     g_cSocketPort.AddChangeHook(ERS_OnConVarChanged);
     RegServerCmd("ers_restart", ERS_RestartSocket, "Restarts the socket", 0);
@@ -94,7 +92,6 @@ public void OnPluginEnd()
     GetConVarString(g_cSocketPort, port, sizeof(port));
     PrintToServer("Closing socket");
     delete hSocket;
-    // hSocket = null;
 }
 
 ///////////////////////
@@ -125,7 +122,6 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
         // Begin collating this data as JSON_Objects
         JSON_Object data	   = new JSON_Object();	   // Begin coersion into a JSON object
         JSON_Object jsonPoints = new JSON_Object();
-        // jsonPoints.Set("points", points);
 
         // loop through points and add each one to the json object
         for (int i = 0; i < points.Length; i++)
@@ -136,7 +132,6 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
             jsonPoint.SetInt("team", p.team);
             jsonPoint.SetInt("index", p.index);
             jsonPoint.SetInt("locked", p.locked);
-            jsonPoint.SetInt("useless", 0);
             char iAsChar[2];	// null terminator
             IntToString(i, iAsChar, sizeof(iAsChar));
             jsonPoints.SetObject(iAsChar, jsonPoint);
@@ -184,8 +179,6 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
         // find all the points in data and delete them
         for (int i = 0; i < points.Length; i++)
         {
-            // ControlPoint p;
-            // points.GetArray(i, p);
             char iAsChar[2];
             IntToString(i, iAsChar, sizeof(iAsChar));
             delete jsonPoints.GetObject(iAsChar);
@@ -221,15 +214,13 @@ void ERS_SocketHandleIncoming(Socket socket, Socket newSocket, const char[] host
 // Create a Handler for disconnecting connections.
 void ERS_SocketDisconnect(Socket socket, any arg)
 {
-    // PrintToServer("Disconnected socket");
     delete socket;
 }
 
 // Create a Handler for errors.
 void ERS_ErrorHandler(Socket socket, const int errorType, const int errorNum, any arg)
 {
-    // TODO: Handle errors
-    PrintToServer("Socket error: %d %d", errorType, errorNum);
+    PrintToServer("[ERS] Socket error: %d %d", errorType, errorNum);
     OnPluginEnd();
     OnMapStart();
 }
@@ -250,14 +241,11 @@ ERSRoundState ERS_RetrieveRoundState()
     GetMapTimeLeft(MatchTimer);
     ERSRoundState rs;
     rs.state		   = GameRules_GetRoundState();
-
     rs.redScore		   = GetTeamScore(2);
     rs.blueScore	   = GetTeamScore(3);
     rs.roundTimerState = TF2_GetRoundTimeLeft(rs.roundTime);
-    // rs.matchTimerState = TF2_GetMatchTimeLeft(matchTime);
     rs.matchTimerState = TF2TimerState_NotApplicable;
     rs.matchTime	   = MatchTimer;
-
     rs.isKoth		   = TF2_GetKothClocks(rs.redTime, rs.bluTime);
     return rs;
 }
