@@ -97,7 +97,7 @@ public void OnPluginEnd()
 }
 
 ///////////////////////
-// CORE PLUGIN LOGIC //
+// core plugin logic (please keep scary comments lower case...) //
 ///////////////////////
 void ERS_MainLogic(Socket socket, const char[] receiveData)
 {
