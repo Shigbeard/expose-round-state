@@ -7,9 +7,10 @@
 #include <handles>
 #include <json>
 #include <tf2>
+#include <tf2_stocks>
 #include <tf2_morestocks>
 
-#define PLUGIN_VERSION		  "1.1.0"
+#define PLUGIN_VERSION		  "1.1.1"
 #define HTTP_DATA_RESPONSE "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
 #define HTTP_CORS_RESPONSE	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"
 
