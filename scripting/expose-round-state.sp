@@ -7,12 +7,13 @@
 #include <handles>
 #include <json>
 #include <tf2>
-#include <tf2_stocks>
 #include <tf2_morestocks>
 
 #define PLUGIN_VERSION		  "1.1.0"
 #define HTTP_DATA_RESPONSE "HTTP/1.0 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999\r\nContent-Type: application/json; charset=UTF-8\r\nServer: The Cursed Child\r\nContent-Encoding: none\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s\r\n\r\n"
 #define HTTP_CORS_RESPONSE	  "HTTP/1.0 200 OK\r\nContent-Length: 0\r\nConnection: drop\r\nServer: SRCDS/Sourcemod(Non-Compliant)\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET\r\nAccess-Control-Allow-Headers: Content-Type\r\nAccess-Control-Max-Age: 999999"
+
+#define MAX_AUTHID_LENGTH 32
 
 ConVar g_cSocketIP	  = null;
 ConVar g_cSocketPort  = null;
@@ -59,7 +60,7 @@ enum struct PlayerListEntry
     // int  kills; // Cannot get kills/deaths without extra modules
     // int  deaths;
     float  ping;
-};
+}
 
 /////////////
 // NATIVES //
@@ -79,8 +80,8 @@ public void OnPluginStart()
     g_cSocketPort  = CreateConVar("ers_port", "27019", "Port to open socket on. Will respond to HTTP requests, CORS can bite me.", FCVAR_PROTECTED);
     // g_cBluTeamName = CreateConVar("ers_team_blu", "BLU", "Name of the BLU team", FCVAR_PROTECTED);
     // g_cRedTeamName = CreateConVar("ers_team_red", "RED", "Name of the RED team", FCVAR_PROTECTED);
-    g_cBluTeamName = FindConvar("mp_tournament_blueteamname");
-    g_cRedTeamName = FindConvar("mp_tournament_redteamname");
+    g_cBluTeamName = FindConVar("mp_tournament_blueteamname");
+    g_cRedTeamName = FindConVar("mp_tournament_redteamname");
     AutoExecConfig(true, "expose_round_state");
     g_cSocketIP.AddChangeHook(ERS_OnConVarChanged);
     g_cSocketPort.AddChangeHook(ERS_OnConVarChanged);
@@ -180,7 +181,7 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
         int		 maxClients = MaxClients;
         for (int i = 1; i <= maxClients; i++)
         {
-            if (IsClientInGame(i)) // no hallucination
+            if (IsClientInGame(i) && !IsFakeClient(i)) // no hallucination
             {
                 PlayerListEntry ple;
                 GetClientName(i, ple.name, sizeof(ple.name));
@@ -190,12 +191,13 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
                     strcopy(ple.steamID, sizeof(ple.steamID), "UNKNOWN");
                 }
                 ple.team   = GetClientTeam(i);
-                ple.class  = TF2_GetPlayerClass(i);
+                ple.class  = view_as<int>(TF2_GetPlayerClass(i));
                 // ple.score  = GetClientScore(i);
                 // ple.kills  = TF2_GetClientKills(i);
                 // ple.deaths = TF2_GetClientDeaths(i);
+
                 ple.ping   = GetClientLatency(i, NetFlow_Both);
-                
+
                 JSON_Object jsonPlayer = new JSON_Object();
                 jsonPlayer.SetString("name", ple.name);
                 jsonPlayer.SetString("steamID", ple.steamID);
@@ -205,13 +207,13 @@ void ERS_MainLogic(Socket socket, const char[] receiveData)
                 // jsonPlayer.SetInt("kills", ple.kills);
                 // jsonPlayer.SetInt("deaths", ple.deaths);
                 jsonPlayer.SetFloat("ping", ple.ping);
-                jsonPlayers.AppendObject(jsonPlayer);
+                jsonPlayers.PushObject(jsonPlayer);
             }
         }
-        data.SetArray("players", jsonPlayers);
+        data.SetObject("players", jsonPlayers);
 
         // begin HTML response
-        char response[2048];							  // We've added more data, significantly more. Buffer is now 8k
+        char response[8192];							  // We've added more data, significantly more. Buffer is now 8k
         json_encode(data, response, sizeof(response));	  // Convert json object to string
 
         char payload[3086];	   // Pracitcally the same deal here, except we're formatting a string along the way.
